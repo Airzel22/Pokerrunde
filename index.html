@@ -71,6 +71,12 @@ main{max-width:560px;margin:0 auto;padding:16px 16px 96px;display:flex;flex-dire
 .row .name{font-weight:600;font-size:17px;overflow-wrap:anywhere}
 .row .meta{font-size:13px;color:var(--muted)}
 .rank{width:22px;color:var(--muted);font-size:14px;text-align:right}
+.rank.medal{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex:none;margin-left:-4px;box-shadow:inset 0 0 0 2px rgba(255,255,255,.35)}
+.rank.m1{background:#d4a514;color:#3a2c00}
+.rank.m2{background:#aab3ba;color:#22282c}
+.rank.m3{background:#b9773f;color:#fff}
+button.chip{border:0;min-height:32px;text-decoration:underline;text-underline-offset:3px}
+.guest{font-weight:500;color:var(--muted)}
 .amt{font-weight:600;border-radius:8px;padding:4px 9px;white-space:nowrap;background:var(--bg)}
 .amt.pos{color:var(--pos);background:var(--pos-bg)}
 .amt.neg{color:var(--neg);background:var(--neg-bg)}
@@ -187,18 +193,18 @@ function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(
 function today(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function dDate(iso){ var p=String(iso||'').split('-'); return p.length===3 ? p[2]+'.'+p[1]+'.'+p[0] : ''; }
 
-var S = { players:[], entries:[], night:{buyins:[],out:{}}, ready:false, mode:'loading', slow:false, error:'', tab:'gesamt' };
+var S = { players:[], entries:[], night:{buyins:[],out:{}}, guests:0, ready:false, mode:'loading', slow:false, error:'', tab:'gesamt' };
 var sheet = null;      // {kind:'gesamt'|'abend', id, sign}
 var db = false, auth = null, fs = null, unsub = [];
 var LS = 'pokerrunde-v1';
 try{ var t = localStorage.getItem(LS+'-tab'); if(t==='abend'||t==='gesamt') S.tab=t; }catch(e){}
 
 /* ---------- Speicher ---------- */
-function saveLocal(){ try{ localStorage.setItem(LS, JSON.stringify({players:S.players,entries:S.entries,night:S.night})); }catch(e){} }
+function saveLocal(){ try{ localStorage.setItem(LS, JSON.stringify({players:S.players,entries:S.entries,night:S.night,guests:S.guests})); }catch(e){} }
 function loadLocal(){
   try{
     var d = JSON.parse(localStorage.getItem(LS)||'null');
-    if(d){ S.players=d.players||[]; S.entries=d.entries||[]; S.night={buyins:(d.night&&d.night.buyins)||[], out:(d.night&&d.night.out)||{}}; }
+    if(d){ S.guests=d.guests||0; S.players=d.players||[]; S.entries=d.entries||[]; S.night={buyins:(d.night&&d.night.buyins)||[], out:(d.night&&d.night.out)||{}}; }
   }catch(e){}
 }
 function fail(e){
@@ -234,6 +240,10 @@ async function delPlayer(id){
     saveLocal(); render();
   }
 }
+function saveGuests(v){
+  S.guests=v; render();
+  if(db) setDoc(doc(fs,'meta','settings'),{guests:v}).catch(fail); else saveLocal();
+}
 var nightChain = Promise.resolve();
 function saveNight(n){
   S.night = n; render();
@@ -263,19 +273,22 @@ function banner(){
 function viewGesamt(){
   var t = totals();
   var list = S.players.slice().sort(function(a,b){ return t[b.id].sum - t[a.id].sum || a.name.localeCompare(b.name); });
-  var check = list.reduce(function(a,p){ return a+t[p.id].sum; },0);
+  var check = list.reduce(function(a,p){ return a+t[p.id].sum; },0) + (S.guests||0);
   var h = banner();
   if(list.length){
     h += '<div class="summary"><div><div class="label">Spieler</div><div class="big num">'+list.length+'</div></div>'+
-         '<div style="text-align:right"><div class="label">Summe aller Stände</div>'+
-         '<span class="chip num '+(check===0?'ok':'bad')+'">'+(check===0?'0,00 € · geht auf':signed(check)+' · geht nicht auf')+'</span></div></div>';
+         '<div style="text-align:right"><div class="label">Kontrollsumme mit Gästen</div>'+
+         '<button class="chip num '+(check===0?'ok':'bad')+'" data-act="open-guests">'+(check===0?'0,00 € · geht auf':signed(check)+' · anpassen')+'</button></div></div>';
     h += '<ul class="rows">'+list.map(function(p,i){
       var x=t[p.id];
       return '<li><button class="row" data-act="open" data-kind="gesamt" data-id="'+p.id+'">'+
-        '<span class="rank num">'+(i+1)+'</span>'+
+        '<span class="rank num'+(i<3?' medal m'+(i+1):'')+'">'+(i+1)+'</span>'+
         '<span class="who"><span class="name">'+esc(p.name)+'</span><br><span class="meta">'+(x.n===0?'noch kein Eintrag':x.n+(x.n===1?' Eintrag':' Einträge'))+'</span></span>'+
         '<span class="amt num '+cls(x.sum)+'">'+signed(x.sum)+'</span><span class="chev" aria-hidden="true">›</span></button></li>';
-    }).join('')+'</ul>';
+    }).join('')+
+      '<li><button class="row" data-act="open-guests"><span class="rank"></span>'+
+      '<span class="who"><span class="name guest">Gäste</span><br><span class="meta">Mitspieler, die nicht in der Liste stehen</span></span>'+
+      '<span class="amt num '+cls(S.guests)+'">'+signed(S.guests)+'</span><span class="chev" aria-hidden="true">›</span></button></li></ul>';
     h += '<div class="label">Tippe einen Spieler an, um seinen Endstand des Abends einzutragen.</div>';
   }else{
     h += '<div class="rows"><div class="empty">Noch keine Spieler. Leg unten eure Runde an.</div></div>';
@@ -333,7 +346,7 @@ function render(){
   m.innerHTML = S.tab==='gesamt' ? viewGesamt() : viewAbend();
   if(keep!==null && $('#player-name')){ $('#player-name').value=keep; $('#player-name').focus(); }
   if(sheet){
-    if(!S.players.some(function(p){return p.id===sheet.id;})) closeSheet(); else sheetDynamic();
+    if(sheet.kind==='guests'){ /* bleibt offen */ } else if(!S.players.some(function(p){return p.id===sheet.id;})) closeSheet(); else sheetDynamic();
   }
 }
 
@@ -369,7 +382,7 @@ function openSheet(kind,id){
   $('#sheet').scrollTop = 0;
 }
 function sheetDynamic(){
-  if(!sheet) return;
+  if(!sheet || sheet.kind==='guests') return;
   var tot = $('#sheet-total'), list = $('#sheet-list');
   if(sheet.kind==='gesamt'){
     var mine = S.entries.filter(function(e){return e.playerId===sheet.id;}).sort(function(a,b){ return String(b.date).localeCompare(String(a.date)) || (b.created||0)-(a.created||0); });
@@ -389,6 +402,22 @@ function sheetDynamic(){
              '<button class="del" data-act="del-buy" data-id="'+x.id+'" data-confirm="Löschen?">löschen</button></li>';
     }).join('') : '<li><span class="d">Heute noch nichts eingezahlt.</span></li>';
   }
+}
+function openGuests(){
+  var t=totals(), psum=S.players.reduce(function(a,p){return a+t[p.id].sum;},0), need=-psum, g=S.guests||0;
+  sheet={kind:'guests',id:null,sign:g>0?1:-1,need:need};
+  $('#sheet-in').innerHTML =
+    '<div class="sheet-head"><h2>Gäste</h2><span class="amt num '+cls(g)+'">'+signed(g)+'</span><button class="x" data-act="close" aria-label="Schließen">×</button></div>'+
+    '<div class="label" style="font-size:15px">Hier steht, was Mitspieler außerhalb der Liste zusammen gewonnen oder verloren haben. Die Spieler in der Liste stehen zusammen bei <b class="num">'+signed(psum)+'</b>. Damit die Kontrollsumme aufgeht, müssten die Gäste bei <b class="num">'+signed(need)+'</b> stehen.</div>'+
+    '<form id="f-guests"><div class="seg" role="group" aria-label="Vorzeichen">'+
+    '<button type="button" data-act="sign" data-sign="-1" aria-pressed="'+(g>0?'false':'true')+'">Gäste im Minus</button>'+
+    '<button type="button" data-act="sign" data-sign="1" aria-pressed="'+(g>0?'true':'false')+'">Gäste im Plus</button></div>'+
+    '<label for="guests-amount">Stand der Gäste in €</label>'+
+    '<input class="money" id="guests-amount" inputmode="decimal" autocomplete="off" value="'+String(Math.abs(g)/100).replace('.',',')+'">'+
+    '<div class="err" id="guests-err"></div>'+
+    '<button class="btn primary wide">Speichern</button></form>'+
+    '<button class="btn wide" data-act="guests-balance">Auf '+signed(need)+' setzen, damit es aufgeht</button>';
+  $('#sheet').classList.add('on'); $('#backdrop').classList.add('on'); $('#sheet').scrollTop=0;
 }
 function closeSheet(){ sheet=null; $('#sheet').classList.remove('on'); $('#backdrop').classList.remove('on'); }
 
@@ -431,6 +460,8 @@ document.addEventListener('click',function(ev){
   if(act==='tab'){ S.tab=el.dataset.tab; try{localStorage.setItem(LS+'-tab',S.tab);}catch(e){} render(); window.scrollTo(0,0); return; }
   if(act==='close'){ closeSheet(); return; }
   if(act==='logout'){ signOut(auth); return; }
+  if(act==='open-guests'){ openGuests(); return; }
+  if(act==='guests-balance'){ var nd=sheet.need; closeSheet(); saveGuests(nd); toast('Gäste auf '+signed(nd)+' gesetzt. Die Kontrollsumme geht auf.'); return; }
   if(act==='open'){ openSheet(el.dataset.kind, el.dataset.id); return; }
   if(act==='sign'){
     sheet.sign = Number(el.dataset.sign);
@@ -442,6 +473,7 @@ document.addEventListener('click',function(ev){
   if(act==='copy'){
     var t = totals();
     var lines = S.players.slice().sort(function(a,b){return t[b.id].sum-t[a.id].sum;}).map(function(p){ return p.name+': '+signed(t[p.id].sum); });
+    if(S.guests) lines.push('Gäste: '+signed(S.guests));
     var text = 'Pokerrunde · Stand '+dDate(today())+'\n'+lines.join('\n');
     try{ navigator.clipboard.writeText(text).then(function(){ toast('Stand kopiert. Jetzt in WhatsApp einfügen.'); }, function(){ toast('Kopieren hat nicht geklappt.'); }); }
     catch(e){ toast('Kopieren hat nicht geklappt.'); }
@@ -469,6 +501,12 @@ document.addEventListener('submit',function(ev){
         : /invalid-credential|wrong-password|user-not-found|invalid-email|user-disabled/.test(c) ? 'Name oder Passwort stimmt nicht.'
         : 'Anmelden hat nicht geklappt ('+c+').';
     }).finally(function(){ $('#login-btn').disabled=false; });
+    return;
+  }
+  if(f==='f-guests'){
+    var gr=$('#guests-amount').value.trim(), gv = gr==='' ? 0 : parseEuro(gr);
+    if(gv===null){ $('#guests-err').textContent='Gib einen Betrag ein, zum Beispiel 20 oder 0.'; return; }
+    var gs=gv*sheet.sign; closeSheet(); saveGuests(gs); toast('Gäste: '+signed(gs)+' gespeichert');
     return;
   }
   if(f==='f-player'){
@@ -518,6 +556,7 @@ function subscribe(){
   function rows(s){ return s.docs.map(function(x){ return Object.assign({id:x.id}, x.data()); }); }
   unsub.push(onSnapshot(collection(fs,'players'),function(s){ S.players=rows(s); got.p=true; done(); }, onErr));
   unsub.push(onSnapshot(collection(fs,'entries'),function(s){ S.entries=rows(s); got.e=true; done(); }, onErr));
+  unsub.push(onSnapshot(doc(fs,'meta','settings'),function(s){ var x=s.exists()?s.data():null; S.guests=(x&&x.guests)||0; render(); }, onErr));
   unsub.push(onSnapshot(doc(fs,'night','current'),function(s){
     var x = s.exists() ? s.data() : null;
     S.night = { buyins:(x&&x.buyins?x.buyins.slice():[]), out:Object.assign({}, x&&x.out) };
@@ -529,7 +568,7 @@ function init(){
   var app=initializeApp(firebaseConfig); auth=getAuth(app); fs=getFirestore(app); db=true; S.mode='db';
   onAuthStateChanged(auth,function(u){
     unsub.forEach(function(f){ f(); }); unsub=[];
-    S.ready=false; S.error=''; S.players=[]; S.entries=[]; S.night={buyins:[],out:{}};
+    S.ready=false; S.error=''; S.players=[]; S.entries=[]; S.night={buyins:[],out:{}}; S.guests=0;
     if(!u){ closeSheet(); showLogin(true); return; }
     showLogin(false); render(); subscribe();
   });
