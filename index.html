@@ -75,6 +75,7 @@ main{max-width:560px;margin:0 auto;padding:16px 16px 96px;display:flex;flex-dire
 .rank.m1{background:#d4a514;color:#3a2c00}
 .rank.m2{background:#aab3ba;color:#22282c}
 .rank.m3{background:#b9773f;color:#fff}
+.season-select{font-family:var(--display);font-size:26px;font-weight:700;height:44px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);padding:0 8px}
 button.chip{border:0;min-height:32px;text-decoration:underline;text-underline-offset:3px}
 .guest{font-weight:500;color:var(--muted)}
 .amt{font-weight:600;border-radius:8px;padding:4px 9px;white-space:nowrap;background:var(--bg)}
@@ -193,18 +194,18 @@ function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(
 function today(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function dDate(iso){ var p=String(iso||'').split('-'); return p.length===3 ? p[2]+'.'+p[1]+'.'+p[0] : ''; }
 
-var S = { players:[], entries:[], night:{buyins:[],out:{}}, guests:0, ready:false, mode:'loading', slow:false, error:'', tab:'gesamt' };
+var S = { players:[], entries:[], night:{buyins:[],out:{}}, season:2026, guestsBy:{}, view:null, ready:false, mode:'loading', slow:false, error:'', tab:'gesamt' };
 var sheet = null;      // {kind:'gesamt'|'abend', id, sign}
 var db = false, auth = null, fs = null, unsub = [];
 var LS = 'pokerrunde-v1';
 try{ var t = localStorage.getItem(LS+'-tab'); if(t==='abend'||t==='gesamt') S.tab=t; }catch(e){}
 
 /* ---------- Speicher ---------- */
-function saveLocal(){ try{ localStorage.setItem(LS, JSON.stringify({players:S.players,entries:S.entries,night:S.night,guests:S.guests})); }catch(e){} }
+function saveLocal(){ try{ localStorage.setItem(LS, JSON.stringify({players:S.players,entries:S.entries,night:S.night,season:S.season,guestsBy:S.guestsBy})); }catch(e){} }
 function loadLocal(){
   try{
     var d = JSON.parse(localStorage.getItem(LS)||'null');
-    if(d){ S.guests=d.guests||0; S.players=d.players||[]; S.entries=d.entries||[]; S.night={buyins:(d.night&&d.night.buyins)||[], out:(d.night&&d.night.out)||{}}; }
+    if(d){ applySettings(d); S.players=d.players||[]; S.entries=d.entries||[]; S.night={buyins:(d.night&&d.night.buyins)||[], out:(d.night&&d.night.out)||{}}; }
   }catch(e){}
 }
 function fail(e){
@@ -217,6 +218,7 @@ function addPlayer(name){
   S.players.push(Object.assign({id:uid()},p)); saveLocal(); render(); return Promise.resolve();
 }
 function addEntry(en){
+  en.season=S.season;
   if(db) return addDoc(collection(fs,'entries'),en).catch(fail);
   S.entries.push(Object.assign({id:uid()},en)); saveLocal(); render(); return Promise.resolve();
 }
@@ -240,9 +242,28 @@ async function delPlayer(id){
     saveLocal(); render();
   }
 }
+function applySettings(x){
+  x=x||{};
+  S.season = Number(x.season)||2026;
+  S.guestsBy = Object.assign({}, x.guestsBy);
+  if(x.guests!=null && !x.guestsBy) S.guestsBy[S.season]=x.guests;
+  if(S.view===S.season) S.view=null;
+}
+function saveSettings(){
+  render();
+  if(db) setDoc(doc(fs,'meta','settings'),{season:S.season,guestsBy:S.guestsBy}).catch(fail); else saveLocal();
+}
 function saveGuests(v){
-  S.guests=v; render();
-  if(db) setDoc(doc(fs,'meta','settings'),{guests:v}).catch(fail); else saveLocal();
+  S.guestsBy = Object.assign({},S.guestsBy); S.guestsBy[S.season]=v; saveSettings();
+}
+function vs(){ return S.view||S.season; }
+function isOld(){ return vs()!==S.season; }
+function G(){ return S.guestsBy[vs()]||0; }
+function seasonOf(e){ return Number(e.season) || Number(String(e.date||'').slice(0,4)) || 2026; }
+function seasons(){
+  var m={}; m[S.season]=1;
+  S.entries.forEach(function(e){ m[seasonOf(e)]=1; });
+  return Object.keys(m).map(Number).sort(function(a,b){return b-a;});
 }
 var nightChain = Promise.resolve();
 function saveNight(n){
@@ -255,7 +276,7 @@ function saveNight(n){
 function totals(){
   var m = {};
   S.players.forEach(function(p){ m[p.id]={sum:0,n:0}; });
-  S.entries.forEach(function(e){ if(m[e.playerId]){ m[e.playerId].sum += e.amount||0; m[e.playerId].n++; } });
+  S.entries.forEach(function(e){ if(m[e.playerId] && seasonOf(e)===vs()){ m[e.playerId].sum += e.amount||0; m[e.playerId].n++; } });
   return m;
 }
 function paidIn(id){ return S.night.buyins.reduce(function(a,b){ return a + (b.p===id ? b.a : 0); },0); }
@@ -271,14 +292,23 @@ function banner(){
   return h;
 }
 function viewGesamt(){
-  var t = totals();
+  var t = totals(), old = isOld(), v = vs(), g = G();
   var list = S.players.slice().sort(function(a,b){ return t[b.id].sum - t[a.id].sum || a.name.localeCompare(b.name); });
-  var check = list.reduce(function(a,p){ return a+t[p.id].sum; },0) + (S.guests||0);
+  if(old) list = list.filter(function(p){ return t[p.id].n>0; });
+  var check = list.reduce(function(a,p){ return a+t[p.id].sum; },0) + g;
+  var ss = seasons();
   var h = banner();
+  var seasonCtl = ss.length>1
+    ? '<select id="season-view" class="season-select" aria-label="Season auswählen">'+ss.map(function(y){ return '<option value="'+y+'"'+(y===v?' selected':'')+'>'+y+(y===S.season?' · aktuell':'')+'</option>'; }).join('')+'</select>'
+    : '<div class="big num">'+v+'</div>';
+  var chipCls = 'chip num '+(check===0?'ok':'bad');
+  var chipTxt = check===0 ? '0,00 € · geht auf' : signed(check)+(old?'':' · anpassen');
+  var chip = old ? '<span class="'+chipCls+'">'+chipTxt+'</span>' : '<button class="'+chipCls+'" data-act="open-guests">'+chipTxt+'</button>';
+  h += '<div class="summary"><div><div class="label">Season</div>'+seasonCtl+'</div>'+
+       '<div style="text-align:right"><div class="label">Kontrollsumme mit Gästen</div>'+chip+'</div></div>';
+  if(old) h += '<div class="note">Abgeschlossene Season. Du kannst sie ansehen, aber nichts mehr ändern.</div>';
   if(list.length){
-    h += '<div class="summary"><div><div class="label">Spieler</div><div class="big num">'+list.length+'</div></div>'+
-         '<div style="text-align:right"><div class="label">Kontrollsumme mit Gästen</div>'+
-         '<button class="chip num '+(check===0?'ok':'bad')+'" data-act="open-guests">'+(check===0?'0,00 € · geht auf':signed(check)+' · anpassen')+'</button></div></div>';
+    var gTag = old ? 'div' : 'button', gAct = old ? '' : ' data-act="open-guests"';
     h += '<ul class="rows">'+list.map(function(p,i){
       var x=t[p.id];
       return '<li><button class="row" data-act="open" data-kind="gesamt" data-id="'+p.id+'">'+
@@ -286,15 +316,16 @@ function viewGesamt(){
         '<span class="who"><span class="name">'+esc(p.name)+'</span><br><span class="meta">'+(x.n===0?'noch kein Eintrag':x.n+(x.n===1?' Eintrag':' Einträge'))+'</span></span>'+
         '<span class="amt num '+cls(x.sum)+'">'+signed(x.sum)+'</span><span class="chev" aria-hidden="true">›</span></button></li>';
     }).join('')+
-      '<li><button class="row" data-act="open-guests"><span class="rank"></span>'+
+      '<li><'+gTag+' class="row"'+gAct+'><span class="rank"></span>'+
       '<span class="who"><span class="name guest">Gäste</span><br><span class="meta">Mitspieler, die nicht in der Liste stehen</span></span>'+
-      '<span class="amt num '+cls(S.guests)+'">'+signed(S.guests)+'</span><span class="chev" aria-hidden="true">›</span></button></li></ul>';
-    h += '<div class="label">Tippe einen Spieler an, um seinen Endstand des Abends einzutragen.</div>';
+      '<span class="amt num '+cls(g)+'">'+signed(g)+'</span>'+(old?'':'<span class="chev" aria-hidden="true">›</span>')+'</'+gTag+'></li></ul>';
+    if(!old) h += '<div class="label">Tippe einen Spieler an, um seinen Endstand des Abends einzutragen.</div>';
   }else{
-    h += '<div class="rows"><div class="empty">Noch keine Spieler. Leg unten eure Runde an.</div></div>';
+    h += '<div class="rows"><div class="empty">'+(old?'In dieser Season gibt es keine Einträge.':'Noch keine Spieler. Leg unten eure Runde an.')+'</div></div>';
   }
-  h += addPlayerForm();
+  if(!old) h += addPlayerForm();
   if(list.length) h += '<button class="btn wide" data-act="copy">Stand für WhatsApp kopieren</button>';
+  if(!old && S.players.length) h += '<button class="btn wide" data-act="open-season">Neue Season starten</button>';
   return h;
 }
 function addPlayerForm(){
@@ -355,7 +386,9 @@ function openSheet(kind,id){
   sheet = {kind:kind,id:id,sign:-1};
   var name = esc(playerName(id));
   var h = '<div class="sheet-head"><h2>'+name+'</h2><span id="sheet-total"></span><button class="x" data-act="close" aria-label="Schließen">×</button></div>';
-  if(kind==='gesamt'){
+  if(kind==='gesamt' && isOld()){
+    h += '<h3>Verlauf Season '+vs()+'</h3><ul class="hist" id="sheet-list"></ul>';
+  }else if(kind==='gesamt'){
     h += '<form id="f-entry"><div class="seg" role="group" aria-label="Vorzeichen">'+
          '<button type="button" data-act="sign" data-sign="-1" aria-pressed="true">Minus gemacht</button>'+
          '<button type="button" data-act="sign" data-sign="1" aria-pressed="false">Plus gemacht</button></div>'+
@@ -385,12 +418,12 @@ function sheetDynamic(){
   if(!sheet || sheet.kind==='guests') return;
   var tot = $('#sheet-total'), list = $('#sheet-list');
   if(sheet.kind==='gesamt'){
-    var mine = S.entries.filter(function(e){return e.playerId===sheet.id;}).sort(function(a,b){ return String(b.date).localeCompare(String(a.date)) || (b.created||0)-(a.created||0); });
+    var mine = S.entries.filter(function(e){return e.playerId===sheet.id && seasonOf(e)===vs();}).sort(function(a,b){ return String(b.date).localeCompare(String(a.date)) || (b.created||0)-(a.created||0); });
     var sum = mine.reduce(function(a,e){return a+(e.amount||0);},0);
     tot.className='amt num '+cls(sum); tot.textContent=signed(sum);
     list.innerHTML = mine.length ? mine.map(function(e){
       return '<li><span class="d num">'+dDate(e.date)+(e.note?' · '+esc(e.note):'')+'</span><span class="amt num '+cls(e.amount)+'">'+signed(e.amount)+'</span>'+
-             '<button class="del" data-act="del-entry" data-id="'+e.id+'" data-confirm="Löschen?">löschen</button></li>';
+             (isOld()?'':'<button class="del" data-act="del-entry" data-id="'+e.id+'" data-confirm="Löschen?">löschen</button>')+'</li>';
     }).join('') : '<li><span class="d">Noch kein Eintrag.</span></li>';
   }else{
     var b = S.night.buyins.filter(function(x){return x.p===sheet.id;});
@@ -404,7 +437,7 @@ function sheetDynamic(){
   }
 }
 function openGuests(){
-  var t=totals(), psum=S.players.reduce(function(a,p){return a+t[p.id].sum;},0), need=-psum, g=S.guests||0;
+  var t=totals(), psum=S.players.reduce(function(a,p){return a+t[p.id].sum;},0), need=-psum, g=G();
   sheet={kind:'guests',id:null,sign:g>0?1:-1,need:need};
   $('#sheet-in').innerHTML =
     '<div class="sheet-head"><h2>Gäste</h2><span class="amt num '+cls(g)+'">'+signed(g)+'</span><button class="x" data-act="close" aria-label="Schließen">×</button></div>'+
@@ -417,6 +450,18 @@ function openGuests(){
     '<div class="err" id="guests-err"></div>'+
     '<button class="btn primary wide">Speichern</button></form>'+
     '<button class="btn wide" data-act="guests-balance">Auf '+signed(need)+' setzen, damit es aufgeht</button>';
+  $('#sheet').classList.add('on'); $('#backdrop').classList.add('on'); $('#sheet').scrollTop=0;
+}
+function openSeason(){
+  var next = Math.max.apply(null, seasons())+1;
+  sheet={kind:'guests',id:null,sign:-1};
+  $('#sheet-in').innerHTML =
+    '<div class="sheet-head"><h2>Neue Season</h2><button class="x" data-act="close" aria-label="Schließen">×</button></div>'+
+    '<div class="label" style="font-size:15px">Aktuell läuft Season <b class="num">'+S.season+'</b>. Mit der neuen Season starten alle Spieler und die Gäste wieder bei 0. Die alte Season bleibt gespeichert und du kannst sie oben im Gesamtstand weiter ansehen.</div>'+
+    '<form id="f-season"><label for="season-new">Jahr der neuen Season</label>'+
+    '<input class="money" id="season-new" inputmode="numeric" autocomplete="off" value="'+next+'">'+
+    '<div class="err" id="season-err"></div></form>'+
+    '<button class="btn primary wide" data-act="start-season" data-confirm="Sicher? Nochmal tippen">Neue Season starten</button>';
   $('#sheet').classList.add('on'); $('#backdrop').classList.add('on'); $('#sheet').scrollTop=0;
 }
 function closeSheet(){ sheet=null; $('#sheet').classList.remove('on'); $('#backdrop').classList.remove('on'); }
@@ -461,6 +506,7 @@ document.addEventListener('click',function(ev){
   if(act==='close'){ closeSheet(); return; }
   if(act==='logout'){ signOut(auth); return; }
   if(act==='open-guests'){ openGuests(); return; }
+  if(act==='open-season'){ openSeason(); return; }
   if(act==='guests-balance'){ var nd=sheet.need; closeSheet(); saveGuests(nd); toast('Gäste auf '+signed(nd)+' gesetzt. Die Kontrollsumme geht auf.'); return; }
   if(act==='open'){ openSheet(el.dataset.kind, el.dataset.id); return; }
   if(act==='sign'){
@@ -473,18 +519,29 @@ document.addEventListener('click',function(ev){
   if(act==='copy'){
     var t = totals();
     var lines = S.players.slice().sort(function(a,b){return t[b.id].sum-t[a.id].sum;}).map(function(p){ return p.name+': '+signed(t[p.id].sum); });
-    if(S.guests) lines.push('Gäste: '+signed(S.guests));
-    var text = 'Pokerrunde · Stand '+dDate(today())+'\n'+lines.join('\n');
+    if(G()) lines.push('Gäste: '+signed(G()));
+    var text = 'Pokerrunde · Season '+vs()+' · Stand '+dDate(today())+'\n'+lines.join('\n');
     try{ navigator.clipboard.writeText(text).then(function(){ toast('Stand kopiert. Jetzt in WhatsApp einfügen.'); }, function(){ toast('Kopieren hat nicht geklappt.'); }); }
     catch(e){ toast('Kopieren hat nicht geklappt.'); }
     return;
   }
   if(!confirmed(el)) return;
+  if(act==='start-season'){
+    var y = Number($('#season-new').value.trim()), mx = Math.max.apply(null, seasons());
+    if(!Number.isInteger(y) || y<2000 || y>2100){ $('#season-err').textContent='Gib ein Jahr ein, zum Beispiel '+(mx+1)+'.'; return; }
+    if(y<=mx){ $('#season-err').textContent='Die neue Season muss nach '+mx+' liegen.'; return; }
+    S.season=y; S.view=null; closeSheet(); saveSettings(); toast('Season '+y+' gestartet. Alle stehen wieder bei 0.');
+    return;
+  }
   if(act==='del-entry'){ delEntry(el.dataset.id); return; }
   if(act==='del-buy'){ removeBuy(el.dataset.id); return; }
   if(act==='del-player'){ var id=sheet.id; closeSheet(); delPlayer(id); return; }
   if(act==='book'){ el.disabled=true; book(); return; }
   if(act==='reset'){ saveNight({buyins:[],out:{}}); toast('Abend verworfen.'); return; }
+});
+document.addEventListener('change',function(ev){
+  if(ev.target.id!=='season-view') return;
+  var y=Number(ev.target.value); S.view = y===S.season ? null : y; render();
 });
 document.addEventListener('submit',function(ev){
   ev.preventDefault();
@@ -556,7 +613,7 @@ function subscribe(){
   function rows(s){ return s.docs.map(function(x){ return Object.assign({id:x.id}, x.data()); }); }
   unsub.push(onSnapshot(collection(fs,'players'),function(s){ S.players=rows(s); got.p=true; done(); }, onErr));
   unsub.push(onSnapshot(collection(fs,'entries'),function(s){ S.entries=rows(s); got.e=true; done(); }, onErr));
-  unsub.push(onSnapshot(doc(fs,'meta','settings'),function(s){ var x=s.exists()?s.data():null; S.guests=(x&&x.guests)||0; render(); }, onErr));
+  unsub.push(onSnapshot(doc(fs,'meta','settings'),function(s){ var x=s.exists()?s.data():null; applySettings(x); render(); }, onErr));
   unsub.push(onSnapshot(doc(fs,'night','current'),function(s){
     var x = s.exists() ? s.data() : null;
     S.night = { buyins:(x&&x.buyins?x.buyins.slice():[]), out:Object.assign({}, x&&x.out) };
@@ -568,7 +625,7 @@ function init(){
   var app=initializeApp(firebaseConfig); auth=getAuth(app); fs=getFirestore(app); db=true; S.mode='db';
   onAuthStateChanged(auth,function(u){
     unsub.forEach(function(f){ f(); }); unsub=[];
-    S.ready=false; S.error=''; S.players=[]; S.entries=[]; S.night={buyins:[],out:{}}; S.guests=0;
+    S.ready=false; S.error=''; S.players=[]; S.entries=[]; S.night={buyins:[],out:{}}; S.season=2026; S.guestsBy={}; S.view=null;
     if(!u){ closeSheet(); showLogin(true); return; }
     showLogin(false); render(); subscribe();
   });
