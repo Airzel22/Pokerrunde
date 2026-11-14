@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Pokerrunde">
+<meta name="robots" content="noindex">
+<title>Pokerrunde Kasse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: grüne Kopfleiste mit zwei Tabs, darunter eine Liste mit großen Tippflächen; Eingaben in einem Blatt von unten. */
+:root{
+  --bg:#f2f5f2; --surface:#ffffff; --ink:#15201b; --muted:#5d6b64; --line:#dce3de;
+  --felt:#14523f; --felt-ink:#eaf4ef;
+  --pos:#13794a; --pos-bg:#e1f3e9; --neg:#c0392b; --neg-bg:#fbe6e3;
+  --warn:#8a5d00; --warn-bg:#fff1cc;
+  --display:"Bricolage Grotesque","Avenir Next","Segoe UI",sans-serif;
+  --body:"IBM Plex Sans",-apple-system,"Helvetica Neue",Arial,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0f1512; --surface:#18211c; --ink:#e8efe9; --muted:#93a39a; --line:#2a362f;
+    --felt:#1a6650; --felt-ink:#eaf4ef;
+    --pos:#55d391; --pos-bg:#143524; --neg:#ff8a7a; --neg-bg:#42201c;
+    --warn:#f0c14b; --warn-bg:#3a2f10;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0f1512; --surface:#18211c; --ink:#e8efe9; --muted:#93a39a; --line:#2a362f;
+  --felt:#1a6650; --felt-ink:#eaf4ef;
+  --pos:#55d391; --pos-bg:#143524; --neg:#ff8a7a; --neg-bg:#42201c;
+  --warn:#f0c14b; --warn-bg:#3a2f10;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.4}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer;-webkit-tap-highlight-color:transparent}
+:focus-visible{outline:3px solid var(--felt);outline-offset:2px}
+h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance}
+.num{font-variant-numeric:tabular-nums}
+
+header{background:var(--felt);color:var(--felt-ink);position:sticky;top:0;z-index:5}
+.head-in{max-width:560px;margin:0 auto;padding:14px 16px 0}
+h1{font-size:22px;font-weight:700}
+[hidden]{display:none!important}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.logout{background:none;border:1px solid rgba(255,255,255,.4);color:var(--felt-ink);border-radius:8px;min-height:36px;padding:0 10px;font-size:14px}
+.login{max-width:560px;margin:0 auto;padding:24px 16px}
+.tabs{display:flex;gap:4px;margin-top:12px}
+.tab{flex:1;background:transparent;border:0;color:var(--felt-ink);opacity:.7;padding:10px 8px 12px;font-weight:600;border-bottom:3px solid transparent}
+.tab[aria-selected="true"]{opacity:1;border-bottom-color:var(--felt-ink)}
+
+main{max-width:560px;margin:0 auto;padding:16px 16px 96px;display:flex;flex-direction:column;gap:16px}
+.note{background:var(--warn-bg);color:var(--warn);border-radius:10px;padding:10px 12px;font-size:14px}
+.summary{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.summary .big{font-family:var(--display);font-size:34px;font-weight:700;line-height:1.1}
+.label{font-size:13px;color:var(--muted);font-weight:500}
+.chip{display:inline-block;border-radius:999px;padding:3px 10px;font-size:13px;font-weight:600}
+.chip.ok{background:var(--pos-bg);color:var(--pos)}
+.chip.bad{background:var(--warn-bg);color:var(--warn)}
+
+.rows{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.rows li+li{border-top:1px solid var(--line)}
+.row{display:flex;align-items:center;gap:10px;width:100%;min-height:60px;padding:8px 12px 8px 14px;background:none;border:0;text-align:left}
+.row .who{flex:1;min-width:0}
+.row .name{font-weight:600;font-size:17px;overflow-wrap:anywhere}
+.row .meta{font-size:13px;color:var(--muted)}
+.rank{width:22px;color:var(--muted);font-size:14px;text-align:right}
+.amt{font-weight:600;border-radius:8px;padding:4px 9px;white-space:nowrap;background:var(--bg)}
+.amt.pos{color:var(--pos);background:var(--pos-bg)}
+.amt.neg{color:var(--neg);background:var(--neg-bg)}
+.chev{color:var(--muted);font-size:18px}
+.open{flex:1;min-width:0;display:flex;align-items:center;gap:10px;background:none;border:0;text-align:left;padding:6px 0;min-height:44px}
+.quick{border:1px solid var(--line);background:var(--bg);border-radius:10px;min-width:50px;min-height:44px;font-weight:600}
+.quick:active,.btn:active{transform:scale(.97)}
+.empty{padding:22px 16px;color:var(--muted);text-align:center}
+
+.inline{display:flex;gap:8px}
+input[type=text],input[type=password],input[type=date],input.money{flex:1;min-width:0;width:100%;height:48px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:0 12px;font-size:17px}
+.btn{height:48px;border-radius:10px;border:1px solid var(--line);background:var(--surface);padding:0 16px;font-weight:600;white-space:nowrap}
+.btn.primary{background:var(--felt);border-color:var(--felt);color:var(--felt-ink)}
+.btn.wide{width:100%}
+.btn.danger{color:var(--neg)}
+.btn[disabled]{opacity:.45}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:12px}
+.card h2{font-size:18px}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th{font-size:12px;color:var(--muted);font-weight:500;text-align:right;padding:0 0 6px}
+th:first-child,td:first-child{text-align:left}
+td{padding:7px 0;border-top:1px solid var(--line);text-align:right}
+td:first-child{overflow-wrap:anywhere}
+
+.backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10;display:none}
+.backdrop.on{display:block}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:11;background:var(--surface);border-radius:18px 18px 0 0;max-height:88%;overflow-y:auto;display:none;box-shadow:0 -8px 30px rgba(0,0,0,.25)}
+.sheet.on{display:block}
+.sheet-in{max-width:560px;margin:0 auto;padding:16px 16px 28px;display:flex;flex-direction:column;gap:14px}
+.sheet-head{display:flex;align-items:center;gap:10px}
+.sheet-head h2{flex:1;font-size:24px;overflow-wrap:anywhere}
+.x{width:40px;height:40px;border-radius:50%;border:0;background:var(--bg);font-size:22px;line-height:1}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{flex:1;height:48px;border:0;background:var(--bg);font-weight:600;color:var(--muted)}
+.seg button[aria-pressed="true"][data-sign="-1"]{background:var(--neg-bg);color:var(--neg)}
+.seg button[aria-pressed="true"][data-sign="1"]{background:var(--pos-bg);color:var(--pos)}
+form{display:flex;flex-direction:column;gap:8px;margin:0}
+label{font-size:13px;color:var(--muted);font-weight:500}
+.hist{list-style:none;margin:0;padding:0}
+.hist li{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:15px}
+.hist .d{flex:1;color:var(--muted)}
+.del{border:0;background:none;color:var(--muted);min-height:40px;padding:0 6px;font-size:14px;text-decoration:underline}
+.sheet h3{font-size:15px;color:var(--muted);font-family:var(--body);font-weight:600}
+.err{color:var(--neg);font-size:14px;min-height:0}
+
+.toast{position:fixed;left:16px;right:16px;bottom:18px;z-index:20;max-width:528px;margin:0 auto;background:var(--ink);color:var(--bg);border-radius:12px;padding:12px 14px;display:none;align-items:center;gap:12px;font-size:15px}
+.toast.on{display:flex}
+.toast span{flex:1}
+.toast button{border:0;background:none;color:inherit;font-weight:700;text-decoration:underline;min-height:32px}
+@media (prefers-reduced-motion: no-preference){.quick,.btn{transition:transform .08s}}
+</style>
+</head>
+<body>
+<header>
+  <div class="head-in">
+    <div class="top"><h1>Pokerrunde</h1><button class="logout" id="logout" data-act="logout" hidden>Abmelden</button></div>
+    <div class="tabs" id="tabs" role="tablist">
+      <button class="tab" role="tab" id="tab-gesamt" data-act="tab" data-tab="gesamt" aria-selected="true">Gesamtstand</button>
+      <button class="tab" role="tab" id="tab-abend" data-act="tab" data-tab="abend" aria-selected="false">Heutiger Abend</button>
+    </div>
+  </div>
+</header>
+<main id="main"><div class="empty">Daten werden geladen …</div></main>
+
+<section id="login" class="login" hidden>
+  <form id="f-login" class="card">
+    <h2>Anmelden</h2>
+    <label for="login-name">Name</label>
+    <input type="text" id="login-name" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false">
+    <label for="login-pw">Passwort</label>
+    <input type="password" id="login-pw" autocomplete="current-password">
+    <div class="err" id="login-err"></div>
+    <button class="btn primary wide" id="login-btn">Anmelden</button>
+  </form>
+</section>
+
+<div class="backdrop" id="backdrop" data-act="close"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true"><div class="sheet-in" id="sheet-in"></div></div>
+<div class="toast" id="toast" role="status"><span id="toast-text"></span><button id="toast-undo" data-act="undo" hidden>Rückgängig</button></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, doc, addDoc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+/* ====== 1. HIER DEINE FIREBASE-KONFIGURATION EINFÜGEN ====== */
+const firebaseConfig = {
+  apiKey: "AIzaSyBZ8UB4tQWSQTevk4iSXyh1jSifGcSuhHo",
+  authDomain: "pokerrunde-8c95b.firebaseapp.com",
+  projectId: "pokerrunde-8c95b",
+  storageBucket: "pokerrunde-8c95b.firebasestorage.app",
+  messagingSenderId: "954119567628",
+  appId: "1:954119567628:web:5724b344c21efb5e873129"
+};
+/* Wer sich als "joost" anmeldet, wird als joost@poker.example.com angemeldet.
+   Genau so legst du die Konten in Firebase an. */
+const LOGIN_DOMAIN = "@poker.example.com";
+/* =========================================================== */
+
+(function(){
+var $ = function(s){ return document.querySelector(s); };
+var nf = new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'});
+function eur(c){ return nf.format(c/100); }
+function signed(c){ return (c>0?'+':c<0?'−':'±') + nf.format(Math.abs(c)/100); }
+function cls(c){ return c>0?'pos':c<0?'neg':''; }
+function esc(s){ return String(s).replace(/[&<>"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];}); }
+function parseEuro(str){
+  var s = String(str).trim().replace(/[€\s+]/g,'').replace(',','.');
+  if(!/^\d+(\.\d{1,2})?$/.test(s)) return null;
+  return Math.round(parseFloat(s)*100);
+}
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+function today(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function dDate(iso){ var p=String(iso||'').split('-'); return p.length===3 ? p[2]+'.'+p[1]+'.'+p[0] : ''; }
+
+var S = { players:[], entries:[], night:{buyins:[],out:{}}, ready:false, mode:'loading', slow:false, error:'', tab:'gesamt' };
+var sheet = null;      // {kind:'gesamt'|'abend', id, sign}
+var db = false, auth = null, fs = null, unsub = [];
+var LS = 'pokerrunde-v1';
+try{ var t = localStorage.getItem(LS+'-tab'); if(t==='abend'||t==='gesamt') S.tab=t; }catch(e){}
+
+/* ---------- Speicher ---------- */
+function saveLocal(){ try{ localStorage.setItem(LS, JSON.stringify({players:S.players,entries:S.entries,night:S.night})); }catch(e){} }
+function loadLocal(){
+  try{
+    var d = JSON.parse(localStorage.getItem(LS)||'null');
+    if(d){ S.players=d.players||[]; S.entries=d.entries||[]; S.night={buyins:(d.night&&d.night.buyins)||[], out:(d.night&&d.night.out)||{}}; }
+  }catch(e){}
+}
+function fail(e){
+  var ro = e && e.code==='permission-denied';
+  toast(ro ? 'Dafür fehlt dir die Berechtigung.' : 'Speichern hat nicht geklappt. Prüfe die Verbindung und versuch es nochmal.');
+}
+function addPlayer(name){
+  var p = {name:name, created:Date.now()};
+  if(db) return addDoc(collection(fs,'players'),p).catch(fail);
+  S.players.push(Object.assign({id:uid()},p)); saveLocal(); render(); return Promise.resolve();
+}
+function addEntry(en){
+  if(db) return addDoc(collection(fs,'entries'),en).catch(fail);
+  S.entries.push(Object.assign({id:uid()},en)); saveLocal(); render(); return Promise.resolve();
+}
+function delEntry(id){
+  if(db) return deleteDoc(doc(fs,'entries',id)).catch(fail);
+  S.entries = S.entries.filter(function(x){return x.id!==id;}); saveLocal(); render(); return Promise.resolve();
+}
+async function delPlayer(id){
+  var mine = S.entries.filter(function(x){return x.playerId===id;});
+  var n = { buyins:S.night.buyins.filter(function(b){return b.p!==id;}), out:Object.assign({},S.night.out) };
+  delete n.out[id];
+  saveNight(n);
+  if(db){
+    try{
+      for(var i=0;i<mine.length;i++){ await deleteDoc(doc(fs,'entries',mine[i].id)); }
+      await deleteDoc(doc(fs,'players',id));
+    }catch(e){ fail(e); }
+  }else{
+    S.entries = S.entries.filter(function(x){return x.playerId!==id;});
+    S.players = S.players.filter(function(x){return x.id!==id;});
+    saveLocal(); render();
+  }
+}
+var nightChain = Promise.resolve();
+function saveNight(n){
+  S.night = n; render();
+  if(db){ nightChain = nightChain.then(function(){ return setDoc(doc(fs,'night','current'),n); }).catch(fail); }
+  else saveLocal();
+}
+
+/* ---------- Rechnen ---------- */
+function totals(){
+  var m = {};
+  S.players.forEach(function(p){ m[p.id]={sum:0,n:0}; });
+  S.entries.forEach(function(e){ if(m[e.playerId]){ m[e.playerId].sum += e.amount||0; m[e.playerId].n++; } });
+  return m;
+}
+function paidIn(id){ return S.night.buyins.reduce(function(a,b){ return a + (b.p===id ? b.a : 0); },0); }
+function pot(){ return S.night.buyins.reduce(function(a,b){ return a+b.a; },0); }
+function playerName(id){ var p=S.players.find(function(x){return x.id===id;}); return p?p.name:'?'; }
+function participants(){ return S.players.filter(function(p){ return paidIn(p.id)>0 || S.night.out[p.id]!=null; }); }
+
+/* ---------- Ansichten ---------- */
+function banner(){
+  var h='';
+  if(S.mode==='local') h+='<div class="note">Testmodus: Die Firebase-Konfiguration fehlt noch. Die Daten liegen nur in diesem Browser.</div>';
+  if(S.error) h+='<div class="note">'+esc(S.error)+'</div>';
+  return h;
+}
+function viewGesamt(){
+  var t = totals();
+  var list = S.players.slice().sort(function(a,b){ return t[b.id].sum - t[a.id].sum || a.name.localeCompare(b.name); });
+  var check = list.reduce(function(a,p){ return a+t[p.id].sum; },0);
+  var h = banner();
+  if(list.length){
+    h += '<div class="summary"><div><div class="label">Spieler</div><div class="big num">'+list.length+'</div></div>'+
+         '<div style="text-align:right"><div class="label">Summe aller Stände</div>'+
+         '<span class="chip num '+(check===0?'ok':'bad')+'">'+(check===0?'0,00 € · geht auf':signed(check)+' · geht nicht auf')+'</span></div></div>';
+    h += '<ul class="rows">'+list.map(function(p,i){
+      var x=t[p.id];
+      return '<li><button class="row" data-act="open" data-kind="gesamt" data-id="'+p.id+'">'+
+        '<span class="rank num">'+(i+1)+'</span>'+
+        '<span class="who"><span class="name">'+esc(p.name)+'</span><br><span class="meta">'+(x.n===0?'noch kein Eintrag':x.n+(x.n===1?' Eintrag':' Einträge'))+'</span></span>'+
+        '<span class="amt num '+cls(x.sum)+'">'+signed(x.sum)+'</span><span class="chev" aria-hidden="true">›</span></button></li>';
+    }).join('')+'</ul>';
+    h += '<div class="label">Tippe einen Spieler an, um seinen Endstand des Abends einzutragen.</div>';
+  }else{
+    h += '<div class="rows"><div class="empty">Noch keine Spieler. Leg unten eure Runde an.</div></div>';
+  }
+  h += addPlayerForm();
+  if(list.length) h += '<button class="btn wide" data-act="copy">Stand für WhatsApp kopieren</button>';
+  return h;
+}
+function addPlayerForm(){
+  return '<form id="f-player" class="inline" style="flex-direction:row"><input type="text" id="player-name" placeholder="Neuer Spieler" maxlength="30" autocomplete="off" aria-label="Name des neuen Spielers"><button class="btn primary">Hinzufügen</button></form>';
+}
+function viewAbend(){
+  var h = banner();
+  var total = pot(), cnt = S.night.buyins.length;
+  h += '<div class="summary"><div><div class="label">Im Pott</div><div class="big num">'+eur(total)+'</div></div>'+
+       '<div class="label" style="text-align:right">'+(cnt===0?'noch nichts eingezahlt':cnt+(cnt===1?' Einzahlung':' Einzahlungen'))+'</div></div>';
+  if(!S.players.length){
+    h += '<div class="rows"><div class="empty">Leg zuerst eure Spieler an.</div></div>'+addPlayerForm();
+    return h;
+  }
+  h += '<ul class="rows">'+S.players.slice().sort(function(a,b){return a.name.localeCompare(b.name);}).map(function(p){
+    var paid = paidIn(p.id), n = S.night.buyins.filter(function(b){return b.p===p.id;}).length;
+    return '<li><div class="row">'+
+      '<button class="open" data-act="open" data-kind="abend" data-id="'+p.id+'"><span class="who"><span class="name">'+esc(p.name)+'</span><br>'+
+      '<span class="meta num">'+(paid?eur(paid)+' eingezahlt'+(n>1?' · '+(n-1)+'× nachgekauft':''):'nicht dabei')+'</span></span></button>'+
+      '<button class="quick num" data-act="buy" data-id="'+p.id+'" data-a="500" aria-label="'+esc(p.name)+' zahlt 5 Euro ein">+5</button>'+
+      '<button class="quick num" data-act="buy" data-id="'+p.id+'" data-a="1000" aria-label="'+esc(p.name)+' zahlt 10 Euro ein">+10</button>'+
+      '</div></li>';
+  }).join('')+'</ul>';
+  h += '<div class="label">+5 und +10 buchen sofort eine Einzahlung. Für andere Beträge, Korrekturen und die Auszahlung tippst du auf den Namen.</div>';
+
+  var part = participants();
+  if(part.length){
+    var allOut = part.every(function(p){ return S.night.out[p.id]!=null; });
+    var sumOut = part.reduce(function(a,p){ return a+(S.night.out[p.id]||0); },0);
+    h += '<div class="card"><h2>Abrechnung</h2><table><thead><tr><th>Spieler</th><th>Rein</th><th>Raus</th><th>Ergebnis</th></tr></thead><tbody>'+
+      part.map(function(p){
+        var i=paidIn(p.id), o=S.night.out[p.id];
+        return '<tr><td>'+esc(p.name)+'</td><td class="num">'+eur(i)+'</td><td class="num">'+(o==null?'offen':eur(o))+'</td><td class="num">'+(o==null?'':'<span class="amt '+cls(o-i)+'">'+signed(o-i)+'</span>')+'</td></tr>';
+      }).join('')+'</tbody></table>';
+    if(!allOut) h += '<div class="label">Trag am Ende bei jedem Spieler die Auszahlung ein (Name antippen). Dann kannst du den Abend in den Gesamtstand buchen.</div>';
+    else if(sumOut!==total) h += '<div class="note">Die Auszahlungen ergeben '+eur(sumOut)+', im Pott sind '+eur(total)+'. Differenz: '+signed(sumOut-total)+'.</div>';
+    else h += '<span class="chip ok" style="align-self:flex-start">Auszahlungen = Pott · geht auf</span>';
+    h += '<button class="btn primary wide" data-act="book" data-confirm="Sicher? Nochmal tippen"'+(allOut?'':' disabled')+'>Abend in den Gesamtstand buchen</button>';
+    h += '<button class="btn wide danger" data-act="reset" data-confirm="Sicher? Nochmal tippen">Abend verwerfen</button></div>';
+  }
+  return h;
+}
+function render(){
+  $('#tab-gesamt').setAttribute('aria-selected', S.tab==='gesamt');
+  $('#tab-abend').setAttribute('aria-selected', S.tab==='abend');
+  var m = $('#main');
+  if(!S.ready){ m.innerHTML = '<div class="empty">'+(S.slow?'Die Daten sind gerade nicht erreichbar. Die Seite versucht es weiter.':'Daten werden geladen …')+'</div>'; return; }
+  var active = document.activeElement, keep = active && active.id==='player-name' ? active.value : null;
+  m.innerHTML = S.tab==='gesamt' ? viewGesamt() : viewAbend();
+  if(keep!==null && $('#player-name')){ $('#player-name').value=keep; $('#player-name').focus(); }
+  if(sheet){
+    if(!S.players.some(function(p){return p.id===sheet.id;})) closeSheet(); else sheetDynamic();
+  }
+}
+
+/* ---------- Blatt ---------- */
+function openSheet(kind,id){
+  sheet = {kind:kind,id:id,sign:-1};
+  var name = esc(playerName(id));
+  var h = '<div class="sheet-head"><h2>'+name+'</h2><span id="sheet-total"></span><button class="x" data-act="close" aria-label="Schließen">×</button></div>';
+  if(kind==='gesamt'){
+    h += '<form id="f-entry"><div class="seg" role="group" aria-label="Vorzeichen">'+
+         '<button type="button" data-act="sign" data-sign="-1" aria-pressed="true">Minus gemacht</button>'+
+         '<button type="button" data-act="sign" data-sign="1" aria-pressed="false">Plus gemacht</button></div>'+
+         '<label for="entry-amount">Endstand des Abends in €</label>'+
+         '<input class="money" id="entry-amount" inputmode="decimal" placeholder="z. B. 5" autocomplete="off">'+
+         '<label for="entry-date">Datum</label><input type="date" id="entry-date" value="'+today()+'">'+
+         '<div class="err" id="entry-err"></div>'+
+         '<button class="btn primary wide">Eintragen</button></form>'+
+         '<h3>Verlauf</h3><ul class="hist" id="sheet-list"></ul>'+
+         '<button class="btn wide danger" data-act="del-player" data-confirm="Mit allen Einträgen löschen? Nochmal tippen">Spieler entfernen</button>';
+  }else{
+    h += '<form id="f-buy"><label for="buy-amount">Einzahlung in € (Einkauf oder Nachkauf)</label>'+
+         '<div class="inline"><input class="money" id="buy-amount" inputmode="decimal" placeholder="z. B. 10" autocomplete="off"><button class="btn primary">Einzahlen</button></div>'+
+         '<div class="err" id="buy-err"></div></form>'+
+         '<h3>Einzahlungen heute</h3><ul class="hist" id="sheet-list"></ul>'+
+         '<form id="f-out"><label for="out-amount">Auszahlung am Ende in € (Wert seiner Chips)</label>'+
+         '<div class="inline"><input class="money" id="out-amount" inputmode="decimal" placeholder="z. B. 15" autocomplete="off"><button class="btn">Speichern</button></div>'+
+         '<div class="err" id="out-err"></div></form>';
+  }
+  $('#sheet-in').innerHTML = h;
+  if(kind==='abend' && S.night.out[id]!=null) $('#out-amount').value = String(S.night.out[id]/100).replace('.',',');
+  sheetDynamic();
+  $('#sheet').classList.add('on'); $('#backdrop').classList.add('on');
+  $('#sheet').scrollTop = 0;
+}
+function sheetDynamic(){
+  if(!sheet) return;
+  var tot = $('#sheet-total'), list = $('#sheet-list');
+  if(sheet.kind==='gesamt'){
+    var mine = S.entries.filter(function(e){return e.playerId===sheet.id;}).sort(function(a,b){ return String(b.date).localeCompare(String(a.date)) || (b.created||0)-(a.created||0); });
+    var sum = mine.reduce(function(a,e){return a+(e.amount||0);},0);
+    tot.className='amt num '+cls(sum); tot.textContent=signed(sum);
+    list.innerHTML = mine.length ? mine.map(function(e){
+      return '<li><span class="d num">'+dDate(e.date)+(e.note?' · '+esc(e.note):'')+'</span><span class="amt num '+cls(e.amount)+'">'+signed(e.amount)+'</span>'+
+             '<button class="del" data-act="del-entry" data-id="'+e.id+'" data-confirm="Löschen?">löschen</button></li>';
+    }).join('') : '<li><span class="d">Noch kein Eintrag.</span></li>';
+  }else{
+    var b = S.night.buyins.filter(function(x){return x.p===sheet.id;});
+    var paid = paidIn(sheet.id);
+    tot.className='amt num'; tot.textContent=eur(paid)+' rein';
+    list.innerHTML = b.length ? b.map(function(x,i){
+      var tm = new Date(x.t), hh = String(tm.getHours()).padStart(2,'0')+':'+String(tm.getMinutes()).padStart(2,'0');
+      return '<li><span class="d num">'+hh+' Uhr · '+(i===0?'Einkauf':'Nachkauf')+'</span><span class="amt num">'+eur(x.a)+'</span>'+
+             '<button class="del" data-act="del-buy" data-id="'+x.id+'" data-confirm="Löschen?">löschen</button></li>';
+    }).join('') : '<li><span class="d">Heute noch nichts eingezahlt.</span></li>';
+  }
+}
+function closeSheet(){ sheet=null; $('#sheet').classList.remove('on'); $('#backdrop').classList.remove('on'); }
+
+/* ---------- Meldung ---------- */
+var toastTimer=null, undoFn=null;
+function toast(text,undo){
+  $('#toast-text').textContent=text; undoFn=undo||null; $('#toast-undo').hidden=!undo;
+  $('#toast').classList.add('on'); clearTimeout(toastTimer);
+  toastTimer=setTimeout(function(){ $('#toast').classList.remove('on'); undoFn=null; }, undo?6000:3500);
+}
+
+/* ---------- Aktionen ---------- */
+function buy(id,a){
+  var b = {id:uid(), p:id, a:a, t:Date.now()};
+  saveNight({buyins:S.night.buyins.concat([b]), out:Object.assign({},S.night.out)});
+  toast(playerName(id)+' zahlt '+eur(a)+' ein', function(){ removeBuy(b.id); });
+}
+function removeBuy(bid){
+  saveNight({buyins:S.night.buyins.filter(function(x){return x.id!==bid;}), out:Object.assign({},S.night.out)});
+}
+async function book(){
+  var part = participants(), d = today(), now = Date.now();
+  for(var i=0;i<part.length;i++){
+    var p = part[i];
+    await addEntry({playerId:p.id, amount:(S.night.out[p.id]||0)-paidIn(p.id), date:d, note:'Abend', created:now+i});
+  }
+  saveNight({buyins:[],out:{}});
+  S.tab='gesamt'; render(); toast('Abend gebucht. Der Gesamtstand ist aktualisiert.');
+}
+function confirmed(el){
+  if(!el.hasAttribute('data-confirm')) return true;
+  if(el.dataset.armed==='1') return true;
+  el.dataset.armed='1'; el.dataset.label=el.textContent; el.textContent=el.getAttribute('data-confirm');
+  setTimeout(function(){ if(el.isConnected && el.dataset.armed==='1'){ el.dataset.armed=''; el.textContent=el.dataset.label; } },3500);
+  return false;
+}
+document.addEventListener('click',function(ev){
+  var el = ev.target.closest('[data-act]'); if(!el) return;
+  var act = el.dataset.act;
+  if(act==='tab'){ S.tab=el.dataset.tab; try{localStorage.setItem(LS+'-tab',S.tab);}catch(e){} render(); window.scrollTo(0,0); return; }
+  if(act==='close'){ closeSheet(); return; }
+  if(act==='logout'){ signOut(auth); return; }
+  if(act==='open'){ openSheet(el.dataset.kind, el.dataset.id); return; }
+  if(act==='sign'){
+    sheet.sign = Number(el.dataset.sign);
+    document.querySelectorAll('.seg button').forEach(function(b){ b.setAttribute('aria-pressed', b===el); });
+    return;
+  }
+  if(act==='undo'){ if(undoFn){ undoFn(); undoFn=null; $('#toast').classList.remove('on'); } return; }
+  if(act==='buy'){ buy(el.dataset.id, Number(el.dataset.a)); return; }
+  if(act==='copy'){
+    var t = totals();
+    var lines = S.players.slice().sort(function(a,b){return t[b.id].sum-t[a.id].sum;}).map(function(p){ return p.name+': '+signed(t[p.id].sum); });
+    var text = 'Pokerrunde · Stand '+dDate(today())+'\n'+lines.join('\n');
+    try{ navigator.clipboard.writeText(text).then(function(){ toast('Stand kopiert. Jetzt in WhatsApp einfügen.'); }, function(){ toast('Kopieren hat nicht geklappt.'); }); }
+    catch(e){ toast('Kopieren hat nicht geklappt.'); }
+    return;
+  }
+  if(!confirmed(el)) return;
+  if(act==='del-entry'){ delEntry(el.dataset.id); return; }
+  if(act==='del-buy'){ removeBuy(el.dataset.id); return; }
+  if(act==='del-player'){ var id=sheet.id; closeSheet(); delPlayer(id); return; }
+  if(act==='book'){ el.disabled=true; book(); return; }
+  if(act==='reset'){ saveNight({buyins:[],out:{}}); toast('Abend verworfen.'); return; }
+});
+document.addEventListener('submit',function(ev){
+  ev.preventDefault();
+  var f = ev.target.id;
+  if(f==='f-login'){
+    var nm=$('#login-name').value.trim().toLowerCase().replace(/\s+/g,''), pw=$('#login-pw').value;
+    if(!nm||!pw){ $('#login-err').textContent='Gib Name und Passwort ein.'; return; }
+    var mail = nm.indexOf('@')>-1 ? nm : nm+LOGIN_DOMAIN;
+    $('#login-err').textContent=''; $('#login-btn').disabled=true;
+    signInWithEmailAndPassword(auth,mail,pw).then(function(){ $('#login-pw').value=''; }).catch(function(e){
+      var c=e&&e.code||'';
+      $('#login-err').textContent = c==='auth/too-many-requests' ? 'Zu viele Versuche. Warte kurz und probier es nochmal.'
+        : c==='auth/network-request-failed' ? 'Keine Verbindung. Prüfe dein Internet.'
+        : /invalid-credential|wrong-password|user-not-found|invalid-email|user-disabled/.test(c) ? 'Name oder Passwort stimmt nicht.'
+        : 'Anmelden hat nicht geklappt ('+c+').';
+    }).finally(function(){ $('#login-btn').disabled=false; });
+    return;
+  }
+  if(f==='f-player'){
+    var inp=$('#player-name'), name=inp.value.trim();
+    if(!name) return;
+    if(S.players.some(function(p){return p.name.toLowerCase()===name.toLowerCase();})){ toast(name+' gibt es schon.'); return; }
+    inp.value=''; addPlayer(name);
+  }
+  if(f==='f-entry'){
+    var v=parseEuro($('#entry-amount').value);
+    if(v===null){ $('#entry-err').textContent='Gib einen Betrag ein, zum Beispiel 5 oder 7,50.'; return; }
+    $('#entry-err').textContent='';
+    var amt = v*sheet.sign, who=playerName(sheet.id);
+    addEntry({playerId:sheet.id, amount:amt, date:$('#entry-date').value||today(), note:'', created:Date.now()});
+    closeSheet(); toast(who+': '+signed(amt)+' eingetragen');
+  }
+  if(f==='f-buy'){
+    var b=parseEuro($('#buy-amount').value);
+    if(b===null||b===0){ $('#buy-err').textContent='Gib einen Betrag ein, zum Beispiel 10.'; return; }
+    $('#buy-err').textContent=''; $('#buy-amount').value=''; $('#buy-amount').blur();
+    buy(sheet.id,b);
+  }
+  if(f==='f-out'){
+    var raw=$('#out-amount').value.trim(), n={buyins:S.night.buyins.slice(), out:Object.assign({},S.night.out)};
+    if(raw===''){ delete n.out[sheet.id]; saveNight(n); closeSheet(); return; }
+    var o=parseEuro(raw);
+    if(o===null){ $('#out-err').textContent='Gib einen Betrag ein, zum Beispiel 15 oder 0.'; return; }
+    n.out[sheet.id]=o; var w=playerName(sheet.id), res=o-paidIn(sheet.id);
+    saveNight(n); closeSheet(); toast(w+': Auszahlung '+eur(o)+' · Ergebnis '+signed(res));
+  }
+});
+
+/* ---------- Start ---------- */
+function configured(){ return firebaseConfig.apiKey && firebaseConfig.apiKey.indexOf('HIER_')!==0; }
+function showLogin(on){
+  $('#login').hidden=!on; $('#main').hidden=on; $('#tabs').hidden=on; $('#logout').hidden=on;
+}
+function subscribe(){
+  var got={p:false,e:false,n:false};
+  var timer=setTimeout(function(){ if(!S.ready){ S.slow=true; render(); } },10000);
+  function done(){ if(got.p&&got.e&&got.n){ S.ready=true; S.slow=false; clearTimeout(timer); } render(); }
+  function onErr(e){
+    clearTimeout(timer); S.ready=true;
+    S.error = e&&e.code==='permission-denied' ? 'Kein Zugriff auf die Daten. Prüfe die Firestore-Regeln.' : 'Die Verbindung zu den Daten ist abgebrochen. Lade die Seite neu.';
+    render();
+  }
+  function rows(s){ return s.docs.map(function(x){ return Object.assign({id:x.id}, x.data()); }); }
+  unsub.push(onSnapshot(collection(fs,'players'),function(s){ S.players=rows(s); got.p=true; done(); }, onErr));
+  unsub.push(onSnapshot(collection(fs,'entries'),function(s){ S.entries=rows(s); got.e=true; done(); }, onErr));
+  unsub.push(onSnapshot(doc(fs,'night','current'),function(s){
+    var x = s.exists() ? s.data() : null;
+    S.night = { buyins:(x&&x.buyins?x.buyins.slice():[]), out:Object.assign({}, x&&x.out) };
+    got.n=true; done();
+  }, onErr));
+}
+function init(){
+  if(!configured()){ S.mode='local'; loadLocal(); S.ready=true; render(); return; }
+  var app=initializeApp(firebaseConfig); auth=getAuth(app); fs=getFirestore(app); db=true; S.mode='db';
+  onAuthStateChanged(auth,function(u){
+    unsub.forEach(function(f){ f(); }); unsub=[];
+    S.ready=false; S.error=''; S.players=[]; S.entries=[]; S.night={buyins:[],out:{}};
+    if(!u){ closeSheet(); showLogin(true); return; }
+    showLogin(false); render(); subscribe();
+  });
+}
+render();
+init();
+})();
+</script>
+</body>
+</html>
